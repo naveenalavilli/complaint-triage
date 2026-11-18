@@ -5,8 +5,6 @@ human-centered, retrieval-and-rules review. The system helps the public submit a
 own cases while staff identify missing information, retrieve relevant policy text, inspect cited
 recommendations, and record the human decision.
 
-Created by [Naveen Alavilli](https://github.com/naveenalavilli).
-
 **Live demo:** <https://complaint-triage-demo-2026.web.app>
 
 ## Architecture
