@@ -1,12 +1,5 @@
-export type UserRole = 'Reviewer' | 'Supervisor' | 'Legal' | 'Admin';
-export type CaseStatus =
-  | 'Received'
-  | 'Processing'
-  | 'NeedsInfo'
-  | 'ReadyForReview'
-  | 'Approved'
-  | 'Routed'
-  | 'Escalated';
+export type UserRole = 'Requester' | 'Reviewer' | 'Supervisor' | 'Legal' | 'Admin';
+export type CaseStatus = 'Received' | 'NeedsInfo' | 'ReadyForReview' | 'Approved' | 'Escalated';
 export type RiskLevel = 'Low' | 'Medium' | 'High' | 'Unscored';
 
 export interface UserProfile {
@@ -40,12 +33,13 @@ export interface ComplaintCase {
   attachmentNames: string[];
   status: CaseStatus;
   riskLevel: RiskLevel;
-  confidence: number;
+  retrievalScore: number;
   allegationCategories: string[];
   missingFields: string[];
-  aiSummary?: string;
+  triageSummary?: string;
   suggestedCodes: CodeSuggestion[];
   recommendedTeam?: string;
+  retrievalMethod?: string;
   assignedTeam?: string;
   reviewerNotes?: string;
   createdAt: string;
@@ -64,11 +58,11 @@ export interface EducationCodeChunk {
 
 export interface TriageResult {
   riskLevel: Exclude<RiskLevel, 'Unscored'>;
-  confidence: number;
+  retrievalScore: number;
   allegationCategories: string[];
   missingFields: string[];
-  aiSummary: string;
+  triageSummary: string;
   suggestedCodes: CodeSuggestion[];
   recommendedTeam: string;
-  model: string;
+  retrievalMethod: string;
 }

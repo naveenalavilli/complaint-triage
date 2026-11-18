@@ -3,14 +3,15 @@ import {
   DocumentData,
   QueryDocumentSnapshot,
   Timestamp,
-  addDoc,
   collection,
   doc,
+  increment,
   onSnapshot,
   orderBy,
   query,
   serverTimestamp,
-  updateDoc,
+  where,
+  writeBatch,
 } from 'firebase/firestore';
 import { firestore } from '../firebase';
 import { ComplaintCase, TriageResult, UserProfile } from '../models';
@@ -25,20 +26,25 @@ export class CaseService {
   readonly error = signal('');
   private unsubscribe?: () => void;
 
-  start(): void {
+  start(profile: UserProfile): void {
     this.unsubscribe?.();
     this.loading.set(true);
-    const caseQuery = query(collection(firestore, 'cases'), orderBy('createdAt', 'desc'));
+    const caseQuery =
+      profile.role === 'Requester'
+        ? query(collection(firestore, 'cases'), where('createdBy', '==', profile.uid))
+        : query(collection(firestore, 'cases'), orderBy('createdAt', 'desc'));
     this.unsubscribe = onSnapshot(
       caseQuery,
       (snapshot) => {
-        const cases = snapshot.docs.map((item) => this.mapCase(item));
-        this.cases.set(cases.length ? cases : SAMPLE_CASES);
+        const cases = snapshot.docs
+          .map((item) => this.mapCase(item))
+          .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+        this.cases.set(cases.length || profile.role === 'Requester' ? cases : SAMPLE_CASES);
         this.loading.set(false);
         this.error.set('');
       },
       () => {
-        this.cases.set(SAMPLE_CASES);
+        this.cases.set(profile.role === 'Requester' ? [] : SAMPLE_CASES);
         this.loading.set(false);
         this.error.set('Live data is unavailable; showing fictional demo cases.');
       },
@@ -53,8 +59,9 @@ export class CaseService {
 
   async createCase(input: Partial<ComplaintCase>, actor: UserProfile): Promise<string> {
     const now = new Date();
-    const suffix = String(now.getTime()).slice(-6);
-    const caseNumber = `TC-${now.getFullYear()}-${suffix}`;
+    const caseRef = doc(collection(firestore, 'cases'));
+    const auditRef = doc(collection(caseRef, 'audit'));
+    const caseNumber = `TC-${now.getFullYear()}-${caseRef.id.slice(0, 8).toUpperCase()}`;
     const payload = {
       caseNumber,
       requesterName: input.requesterName ?? '',
@@ -69,40 +76,50 @@ export class CaseService {
       attachmentNames: input.attachmentNames ?? [],
       status: 'Received',
       riskLevel: 'Unscored',
-      confidence: 0,
+      retrievalScore: 0,
       allegationCategories: [],
       missingFields: [],
       suggestedCodes: [],
       auditCount: 1,
+      lastAuditId: auditRef.id,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
       createdBy: actor.uid,
     };
-    const created = await addDoc(collection(firestore, 'cases'), payload);
-    await addDoc(collection(firestore, 'cases', created.id, 'audit'), {
+    const batch = writeBatch(firestore);
+    batch.set(caseRef, payload);
+    batch.set(auditRef, {
       event: 'CaseSubmitted',
       actor: actor.email,
+      actorUid: actor.uid,
       detail: 'Complaint entered through the structured intake form.',
       createdAt: serverTimestamp(),
     });
-    return created.id;
+    await batch.commit();
+    return caseRef.id;
   }
 
   async saveTriage(caseId: string, result: TriageResult, actor: UserProfile): Promise<void> {
     const nextStatus = result.missingFields.length ? 'NeedsInfo' : 'ReadyForReview';
-    await updateDoc(doc(firestore, 'cases', caseId), {
+    const caseRef = doc(firestore, 'cases', caseId);
+    const auditRef = doc(collection(caseRef, 'audit'));
+    const batch = writeBatch(firestore);
+    batch.update(caseRef, {
       ...result,
       status: nextStatus,
-      auditCount: this.find(caseId).auditCount + 1,
+      auditCount: increment(1),
+      lastAuditId: auditRef.id,
       updatedAt: serverTimestamp(),
       triagedBy: actor.uid,
     });
-    await addDoc(collection(firestore, 'cases', caseId, 'audit'), {
-      event: 'AiTriageCompleted',
+    batch.set(auditRef, {
+      event: 'PolicyTriageCompleted',
       actor: actor.email,
-      detail: `${result.model} produced a grounded draft with ${result.suggestedCodes.length} citation(s).`,
+      actorUid: actor.uid,
+      detail: `${result.retrievalMethod} ranked ${result.suggestedCodes.length} cited policy section(s); deterministic rules produced risk, categories, completeness, and the synopsis.`,
       createdAt: serverTimestamp(),
     });
+    await batch.commit();
   }
 
   async review(
@@ -111,27 +128,35 @@ export class CaseService {
     actor: UserProfile,
     notes: string,
   ): Promise<void> {
-    const current = this.find(caseId);
-    const status = action === 'approve' ? 'Approved' : action === 'sendBack' ? 'NeedsInfo' : 'Escalated';
+    const status =
+      action === 'approve' ? 'Approved' : action === 'sendBack' ? 'NeedsInfo' : 'Escalated';
     const detail =
       action === 'approve'
-        ? 'Reviewer approved the draft recommendation.'
+        ? 'Reviewer approved the triage recommendation and team assignment.'
         : action === 'sendBack'
           ? 'Reviewer requested additional information.'
           : 'Reviewer escalated the complaint for senior review.';
-    await updateDoc(doc(firestore, 'cases', caseId), {
+    const current = this.find(caseId);
+    const caseRef = doc(firestore, 'cases', caseId);
+    const auditRef = doc(collection(caseRef, 'audit'));
+    const batch = writeBatch(firestore);
+    batch.update(caseRef, {
       status,
       reviewerNotes: notes,
-      assignedTeam: action === 'approve' ? current.recommendedTeam ?? '' : current.assignedTeam ?? '',
-      auditCount: current.auditCount + 1,
+      assignedTeam:
+        action === 'approve' ? (current.recommendedTeam ?? '') : (current.assignedTeam ?? ''),
+      auditCount: increment(1),
+      lastAuditId: auditRef.id,
       updatedAt: serverTimestamp(),
     });
-    await addDoc(collection(firestore, 'cases', caseId, 'audit'), {
+    batch.set(auditRef, {
       event: action === 'approve' ? 'Approved' : action === 'sendBack' ? 'SentBack' : 'Escalated',
       actor: actor.email,
+      actorUid: actor.uid,
       detail: notes ? `${detail} Reason: ${notes}` : detail,
       createdAt: serverTimestamp(),
     });
+    await batch.commit();
   }
 
   private find(caseId: string): ComplaintCase {
@@ -141,7 +166,9 @@ export class CaseService {
   private mapCase(snapshot: QueryDocumentSnapshot<DocumentData>): ComplaintCase {
     const data = snapshot.data();
     const date = (value: unknown): string =>
-      value instanceof Timestamp ? value.toDate().toISOString() : String(value ?? new Date().toISOString());
+      value instanceof Timestamp
+        ? value.toDate().toISOString()
+        : String(value ?? new Date().toISOString());
     return {
       id: snapshot.id,
       caseNumber: data['caseNumber'] ?? snapshot.id,
@@ -157,12 +184,13 @@ export class CaseService {
       attachmentNames: data['attachmentNames'] ?? [],
       status: data['status'] ?? 'Received',
       riskLevel: data['riskLevel'] ?? 'Unscored',
-      confidence: Number(data['confidence'] ?? 0),
+      retrievalScore: Number(data['retrievalScore'] ?? data['confidence'] ?? 0),
       allegationCategories: data['allegationCategories'] ?? [],
       missingFields: data['missingFields'] ?? [],
-      aiSummary: data['aiSummary'] ?? '',
+      triageSummary: data['triageSummary'] ?? data['aiSummary'] ?? '',
       suggestedCodes: data['suggestedCodes'] ?? [],
       recommendedTeam: data['recommendedTeam'] ?? '',
+      retrievalMethod: data['retrievalMethod'] ?? (data['model'] ? String(data['model']) : ''),
       assignedTeam: data['assignedTeam'] ?? '',
       reviewerNotes: data['reviewerNotes'] ?? '',
       createdAt: date(data['createdAt']),

@@ -59,10 +59,10 @@ export const SAMPLE_CASES: ComplaintCase[] = [
     attachmentNames: ['gradebook-screenshot.png', 'returned-test.pdf'],
     status: 'ReadyForReview',
     riskLevel: 'Medium',
-    confidence: 0.87,
+    retrievalScore: 0.87,
     allegationCategories: ['Assessment integrity', 'Student records'],
     missingFields: [],
-    aiSummary:
+    triageSummary:
       'The complaint alleges that official assessment records may have been changed after a family raised a concern. The reviewer should compare the source documents and district audit trail.',
     suggestedCodes: [
       {
@@ -76,6 +76,7 @@ export const SAMPLE_CASES: ComplaintCase[] = [
       },
     ],
     recommendedTeam: 'Academic Compliance',
+    retrievalMethod: 'Sample retrieval result',
     createdAt: '2026-11-14T15:30:00.000Z',
     updatedAt: '2026-11-14T15:44:00.000Z',
     auditCount: 7,
@@ -94,10 +95,10 @@ export const SAMPLE_CASES: ComplaintCase[] = [
     attachmentNames: ['forwarded-email.png'],
     status: 'Escalated',
     riskLevel: 'High',
-    confidence: 0.94,
+    retrievalScore: 0.94,
     allegationCategories: ['Student privacy', 'Unauthorized disclosure'],
     missingFields: [],
-    aiSummary:
+    triageSummary:
       'The submission describes a possible unauthorized disclosure of identifiable student information. Preserve the original email and confirm the recipient list before contacting the district.',
     suggestedCodes: [
       {
@@ -111,6 +112,7 @@ export const SAMPLE_CASES: ComplaintCase[] = [
       },
     ],
     recommendedTeam: 'Privacy and Records',
+    retrievalMethod: 'Sample retrieval result',
     assignedTeam: 'Privacy and Records',
     createdAt: '2026-11-14T13:10:00.000Z',
     updatedAt: '2026-11-14T13:18:00.000Z',
@@ -128,10 +130,10 @@ export const SAMPLE_CASES: ComplaintCase[] = [
     attachmentNames: [],
     status: 'NeedsInfo',
     riskLevel: 'Low',
-    confidence: 0.78,
+    retrievalScore: 0.78,
     allegationCategories: ['Family communication'],
     missingFields: ['teacherName', 'incidentDate'],
-    aiSummary:
+    triageSummary:
       'The complaint concerns delayed family communication. The teacher name and incident date are needed before routing.',
     suggestedCodes: [
       {
@@ -145,6 +147,7 @@ export const SAMPLE_CASES: ComplaintCase[] = [
       },
     ],
     recommendedTeam: 'District Support',
+    retrievalMethod: 'Sample retrieval result',
     createdAt: '2026-11-14T11:25:00.000Z',
     updatedAt: '2026-11-14T11:29:00.000Z',
     auditCount: 3,

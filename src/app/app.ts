@@ -2,7 +2,7 @@ import { CommonModule } from '@angular/common';
 import { Component, OnDestroy, computed, effect, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ComplaintCase } from './models';
-import { AiTriageService } from './services/ai-triage.service';
+import { PolicyTriageService } from './services/policy-triage.service';
 import { AuthService } from './services/auth.service';
 import { CaseService } from './services/case.service';
 
@@ -28,7 +28,7 @@ interface IntakeDraft {
 export class App implements OnDestroy {
   readonly auth = inject(AuthService);
   readonly caseService = inject(CaseService);
-  readonly ai = inject(AiTriageService);
+  readonly triageEngine = inject(PolicyTriageService);
 
   readonly view = signal<View>('queue');
   readonly selectedId = signal('');
@@ -40,9 +40,13 @@ export class App implements OnDestroy {
   readonly ocrProgress = signal('');
   readonly attachmentNames = signal<string[]>([]);
   readonly extractedText = signal('');
+  readonly accessMode = signal<'staff' | 'requester'>('staff');
+  readonly registerMode = signal(false);
+  readonly isRequester = computed(() => this.auth.profile()?.role === 'Requester');
 
   loginEmail = '';
   loginPassword = '';
+  registrationName = '';
   intake = this.emptyIntake();
 
   readonly filteredCases = computed(() => {
@@ -50,7 +54,8 @@ export class App implements OnDestroy {
     const status = this.statusFilter();
     return this.caseService.cases().filter((item) => {
       const matchesStatus = status === 'All' || item.status === status;
-      const haystack = `${item.caseNumber} ${item.requesterName} ${item.teacherName} ${item.school} ${item.description}`.toLowerCase();
+      const haystack =
+        `${item.caseNumber} ${item.requesterName} ${item.teacherName} ${item.school} ${item.description}`.toLowerCase();
       return matchesStatus && (!query || haystack.includes(query));
     });
   });
@@ -72,8 +77,17 @@ export class App implements OnDestroy {
   readonly recentCases = computed(() => this.caseService.cases().slice(0, 6));
 
   private readonly authWatcher = effect(() => {
-    if (this.auth.profile()) {
-      this.caseService.start();
+    const profile = this.auth.profile();
+    if (profile) {
+      this.caseService.start(profile);
+      this.view.set(profile.role === 'Requester' ? 'new' : 'queue');
+      if (profile.role === 'Requester') {
+        this.intake = {
+          ...this.emptyIntake(),
+          requesterName: profile.displayName,
+          requesterEmail: profile.email,
+        };
+      }
     } else if (!this.auth.loading()) {
       this.caseService.stop();
       this.selectedId.set('');
@@ -89,6 +103,23 @@ export class App implements OnDestroy {
     } finally {
       this.busy.set('');
     }
+  }
+
+  async registerRequester(): Promise<void> {
+    if (!this.registrationName || !this.loginEmail || !this.loginPassword) return;
+    this.busy.set('register');
+    try {
+      await this.auth.registerRequester(this.registrationName, this.loginEmail, this.loginPassword);
+      this.notice.set('Requester account created. You can now submit a complaint.');
+    } finally {
+      this.busy.set('');
+    }
+  }
+
+  setAccessMode(mode: 'staff' | 'requester'): void {
+    this.accessMode.set(mode);
+    this.registerMode.set(false);
+    this.auth.clearError();
   }
 
   async logout(): Promise<void> {
@@ -107,6 +138,7 @@ export class App implements OnDestroy {
   }
 
   changeView(view: View): void {
+    if (this.isRequester() && view === 'audit') return;
     this.view.set(view);
     this.notice.set('');
     this.closeCase();
@@ -145,9 +177,13 @@ export class App implements OnDestroy {
         text.push(result.data.text.trim());
       }
       this.extractedText.set(text.filter(Boolean).join('\n\n'));
-      this.ocrProgress.set(`OCR complete for ${images.length} image${images.length === 1 ? '' : 's'}.`);
+      this.ocrProgress.set(
+        `OCR complete for ${images.length} image${images.length === 1 ? '' : 's'}.`,
+      );
     } catch {
-      this.ocrProgress.set('OCR could not read this attachment. It can still be submitted for review.');
+      this.ocrProgress.set(
+        'OCR could not read this attachment. It can still be submitted for review.',
+      );
     } finally {
       await worker.terminate();
       this.busy.set('');
@@ -156,7 +192,13 @@ export class App implements OnDestroy {
 
   async submitCase(): Promise<void> {
     const profile = this.auth.profile();
-    if (!profile || !this.intake.requesterName || !this.intake.requesterEmail || !this.intake.description) return;
+    if (
+      !profile ||
+      !this.intake.requesterName ||
+      !this.intake.requesterEmail ||
+      !this.intake.description
+    )
+      return;
     this.busy.set('submit');
     try {
       const id = await this.caseService.createCase(
@@ -167,8 +209,17 @@ export class App implements OnDestroy {
         },
         profile,
       );
-      this.notice.set('Complaint submitted. It is ready for AI-assisted triage.');
-      this.intake = this.emptyIntake();
+      this.notice.set(
+        'Complaint submitted. It is ready for policy retrieval and deterministic triage rules.',
+      );
+      this.intake =
+        profile.role === 'Requester'
+          ? {
+              ...this.emptyIntake(),
+              requesterName: profile.displayName,
+              requesterEmail: profile.email,
+            }
+          : this.emptyIntake();
       this.attachmentNames.set([]);
       this.extractedText.set('');
       this.view.set('queue');
@@ -182,13 +233,15 @@ export class App implements OnDestroy {
 
   async runTriage(item: ComplaintCase): Promise<void> {
     const profile = this.auth.profile();
-    if (!profile) return;
+    if (!profile || profile.role === 'Requester') return;
     this.busy.set('triage');
     this.notice.set('');
     try {
-      const result = await this.ai.triage(item);
+      const result = await this.triageEngine.triage(item);
       await this.caseService.saveTriage(item.id, result, profile);
-      this.notice.set('Grounded draft created. A human reviewer still controls the decision.');
+      this.notice.set(
+        'Cited policy matches and rule-based triage results saved. A human reviewer still controls the decision.',
+      );
     } catch {
       this.notice.set('Triage failed. The case was not changed.');
     } finally {
@@ -199,13 +252,13 @@ export class App implements OnDestroy {
   async review(action: 'approve' | 'sendBack' | 'escalate'): Promise<void> {
     const profile = this.auth.profile();
     const item = this.selectedCase();
-    if (!profile || !item) return;
+    if (!profile || profile.role === 'Requester' || !item) return;
     this.busy.set(action);
     try {
       await this.caseService.review(item.id, action, profile, this.reviewerNotes());
       this.notice.set(
         action === 'approve'
-          ? 'Recommendation approved and routed.'
+          ? 'Recommendation approved; the team assignment was saved.'
           : action === 'sendBack'
             ? 'Case sent back for more information.'
             : 'Case escalated for senior review.',
@@ -234,7 +287,11 @@ export class App implements OnDestroy {
     const date = new Date(value);
     return Number.isNaN(date.getTime())
       ? 'Just now'
-      : new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(date);
+      : new Intl.DateTimeFormat('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+        }).format(date);
   }
 
   ngOnDestroy(): void {

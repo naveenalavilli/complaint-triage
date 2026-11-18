@@ -6,22 +6,81 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function staffRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function isStaff() {
+      return signedIn() && staffRole() in ['Reviewer', 'Supervisor', 'Legal', 'Admin'];
+    }
+
+    function isRequester() {
+      return signedIn() && staffRole() == 'Requester';
+    }
+
+    function isApplicationUser() {
+      return isStaff() || isRequester();
+    }
+
+    function newAuditIsLinked(caseId) {
+      let auditId = request.resource.data.lastAuditId;
+      return auditId is string
+        && !exists(/databases/$(database)/documents/cases/$(caseId)/audit/$(auditId))
+        && existsAfter(/databases/$(database)/documents/cases/$(caseId)/audit/$(auditId));
+    }
+
     match /users/{userId} {
       allow read: if signedIn() && request.auth.uid == userId;
-      allow write: if false;
+      allow create: if signedIn()
+        && request.auth.uid == userId
+        && request.resource.data.keys().hasOnly(['email', 'displayName', 'role', 'createdAt'])
+        && request.resource.data.role == 'Requester'
+        && request.resource.data.email == request.auth.token.email;
+      allow update, delete: if false;
     }
 
     match /cases/{caseId} {
-      allow read: if signedIn();
-      allow create: if signedIn()
-        && request.resource.data.createdBy == request.auth.uid;
-      allow update: if signedIn()
-        && request.resource.data.createdBy == resource.data.createdBy;
+      allow read: if isStaff() || (isRequester() && resource.data.createdBy == request.auth.uid);
+      allow create: if isApplicationUser()
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.keys().hasOnly([
+          'caseNumber', 'requesterName', 'requesterEmail', 'requesterPhone', 'teacherName',
+          'school', 'district', 'incidentDate', 'description', 'extractedText', 'attachmentNames',
+          'status', 'riskLevel', 'retrievalScore', 'allegationCategories', 'missingFields',
+          'suggestedCodes', 'auditCount', 'lastAuditId', 'createdAt', 'updatedAt', 'createdBy'
+        ])
+        && request.resource.data.status == 'Received'
+        && request.resource.data.riskLevel == 'Unscored'
+        && request.resource.data.retrievalScore == 0
+        && request.resource.data.allegationCategories.size() == 0
+        && request.resource.data.missingFields.size() == 0
+        && request.resource.data.suggestedCodes.size() == 0
+        && (!isRequester() || request.resource.data.requesterEmail == request.auth.token.email)
+        && request.resource.data.auditCount == 1
+        && newAuditIsLinked(caseId);
+      allow update: if isStaff()
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.auditCount == resource.data.get('auditCount', 0) + 1
+        && request.resource.data.lastAuditId != resource.data.get('lastAuditId', '')
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status', 'riskLevel', 'retrievalScore', 'allegationCategories', 'missingFields',
+          'triageSummary', 'suggestedCodes', 'recommendedTeam', 'retrievalMethod',
+          'triagedBy', 'reviewerNotes', 'assignedTeam', 'auditCount', 'lastAuditId', 'updatedAt'
+        ])
+        && newAuditIsLinked(caseId);
       allow delete: if false;
 
       match /audit/{eventId} {
-        allow read: if signedIn();
-        allow create: if signedIn();
+        allow read: if isStaff();
+        allow create: if isApplicationUser()
+          && request.resource.data.keys().hasOnly(['event', 'actor', 'actorUid', 'detail', 'createdAt'])
+          && (
+            (isRequester() && request.resource.data.event == 'CaseSubmitted')
+            || (isStaff() && request.resource.data.event in ['CaseSubmitted', 'PolicyTriageCompleted', 'Approved', 'SentBack', 'Escalated'])
+          )
+          && request.resource.data.actorUid == request.auth.uid
+          && request.resource.data.actor == request.auth.token.email
+          && getAfter(/databases/$(database)/documents/cases/$(caseId)).data.lastAuditId == eventId;
         allow update, delete: if false;
       }
     }
