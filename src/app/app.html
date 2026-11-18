@@ -142,6 +142,10 @@
         <p class="privacy-note">
           This demo contains fictional complaints and fictional policy text only.
         </p>
+        <p class="privacy-note">
+          Independent fictional demonstration · Not affiliated with or endorsed by the Texas
+          Education Agency.
+        </p>
       </form>
     </section>
   </main>
@@ -747,14 +751,16 @@
             >
               Send back
             </button>
-            <button
-              class="button button-success"
-              type="button"
-              (click)="review('approve')"
-              [disabled]="!!busy() || !item.triageSummary"
-            >
-              ✓ Approve
-            </button>
+            @if (canApprove()) {
+              <button
+                class="button button-success"
+                type="button"
+                (click)="review('approve')"
+                [disabled]="!!busy() || !item.triageSummary"
+              >
+                ✓ Approve
+              </button>
+            }
           </footer>
         }
       </aside>

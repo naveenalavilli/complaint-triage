@@ -18,6 +18,10 @@ service cloud.firestore {
       return signedIn() && staffRole() == 'Requester';
     }
 
+    function isSupervisor() {
+      return signedIn() && staffRole() == 'Supervisor';
+    }
+
     function isApplicationUser() {
       return isStaff() || isRequester();
     }
@@ -59,6 +63,7 @@ service cloud.firestore {
         && request.resource.data.auditCount == 1
         && newAuditIsLinked(caseId);
       allow update: if isStaff()
+        && (request.resource.data.status != 'Approved' || isSupervisor())
         && request.resource.data.createdBy == resource.data.createdBy
         && request.resource.data.auditCount == resource.data.get('auditCount', 0) + 1
         && request.resource.data.lastAuditId != resource.data.get('lastAuditId', '')
@@ -76,7 +81,8 @@ service cloud.firestore {
           && request.resource.data.keys().hasOnly(['event', 'actor', 'actorUid', 'detail', 'createdAt'])
           && (
             (isRequester() && request.resource.data.event == 'CaseSubmitted')
-            || (isStaff() && request.resource.data.event in ['CaseSubmitted', 'PolicyTriageCompleted', 'Approved', 'SentBack', 'Escalated'])
+            || (isStaff() && request.resource.data.event in ['CaseSubmitted', 'PolicyTriageCompleted', 'SentBack', 'Escalated'])
+            || (isSupervisor() && request.resource.data.event == 'Approved')
           )
           && request.resource.data.actorUid == request.auth.uid
           && request.resource.data.actor == request.auth.token.email

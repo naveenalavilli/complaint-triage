@@ -20,13 +20,14 @@ verification strategy, and production evolution path.
 - Firebase email/password authentication with Requester, Reviewer, and Supervisor profiles
 - Separate `Requester` registration/sign-in for public intake
 - Requester-only “My submissions” view; staff-only review, audit, and disposition controls
+- reCAPTCHA Enterprise-backed Firebase App Check, enforced for Authentication and Firestore
 - Structured complaint intake and case-number generation
 - Image OCR in the browser with Tesseract.js
 - Free, in-browser semantic retrieval with `Xenova/all-MiniLM-L6-v2`
 - Deterministic keyword fallback if the model is unavailable
 - Transparent deterministic rules for risk, categories, completeness, synopsis, and team
 - Grounded policy citations with validation-friendly source IDs
-- Human actions: approve, send back, or escalate
+- Human actions: Reviewers can send back or escalate; only Supervisors can approve
 - Atomic Firestore case/audit writes with authenticated actor validation
 
 All people, complaints, districts, schools, and policy sections in the demo are fictional.
@@ -71,9 +72,10 @@ deterministic keyword-overlap fallback.
 
 The public intake is intentionally separate from the internal review surface. Firestore queries
 and security rules enforce the requester ownership filter; hiding staff controls in the UI is not
-the security boundary. A production public portal should additionally require verified email,
-App Check/bot protection, abuse throttling, consent/retention notices, and a trusted server for
-workflow mutations.
+the security boundary. The deployed web app sends reCAPTCHA Enterprise App Check tokens to
+Firebase, and Firebase enforces them for Authentication and Firestore. A production public portal
+should additionally require verified email, layered abuse throttling, consent/retention notices,
+and a trusted server for workflow mutations.
 
 ## Interface and affiliation
 
@@ -90,6 +92,10 @@ npm start
 ```
 
 Open `http://localhost:4200` and sign in with a provisioned Firebase demo account.
+
+App Check is initialized only on the two deployed Firebase Hosting domains. Local development
+does not use the production reCAPTCHA key. Because App Check enforcement is enabled, use Firebase's
+App Check debug-provider workflow for local backend access.
 
 ## Verification and deployment
 
@@ -116,8 +122,13 @@ runs browser-side retrieval as Reviewer, approves it as Supervisor, and checks p
 events. Each run adds one fictional verification case; the three original sample cases are
 unchanged.
 
-The demo roles do not implement production assignment-scoped approval enforcement. This
-Firebase/browser demo does not implement email delivery, external routing, or persistent
-attachment storage. Public intake requires a Requester account so each person can see only their
-own submissions; production must add email verification, bot protection, abuse throttling,
-privacy/retention consent, and accessible account recovery before accepting real complaints.
+The demo enforces Supervisor-only approval in the UI, client service, and Firestore rules, but it
+does not implement production assignment-scoped approval. This Firebase/browser demo does not
+implement email delivery, external routing, or persistent attachment storage. Public intake
+requires a Requester account so each person can see only their own submissions; production must
+add email verification, layered abuse throttling, privacy/retention consent, and accessible
+account recovery before accepting real complaints.
+
+The project is currently on Firebase's no-cost Spark plan with Cloud Billing disabled, so there is
+no billable spend and Google Cloud cannot attach a budget to it. Before any Blaze upgrade, link an
+approved billing account and create a monthly budget with threshold notifications first.

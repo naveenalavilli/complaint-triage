@@ -43,6 +43,7 @@ export class App implements OnDestroy {
   readonly accessMode = signal<'staff' | 'requester'>('staff');
   readonly registerMode = signal(false);
   readonly isRequester = computed(() => this.auth.profile()?.role === 'Requester');
+  readonly canApprove = computed(() => this.auth.profile()?.role === 'Supervisor');
 
   loginEmail = '';
   loginPassword = '';
@@ -252,7 +253,13 @@ export class App implements OnDestroy {
   async review(action: 'approve' | 'sendBack' | 'escalate'): Promise<void> {
     const profile = this.auth.profile();
     const item = this.selectedCase();
-    if (!profile || profile.role === 'Requester' || !item) return;
+    if (
+      !profile ||
+      profile.role === 'Requester' ||
+      !item ||
+      (action === 'approve' && profile.role !== 'Supervisor')
+    )
+      return;
     this.busy.set(action);
     try {
       await this.caseService.review(item.id, action, profile, this.reviewerNotes());

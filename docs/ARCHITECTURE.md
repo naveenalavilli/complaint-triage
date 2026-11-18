@@ -156,7 +156,7 @@ flowchart TD
     Rank --> Rules[Completeness, category, and risk rules]
     Rules --> Result[Rules-generated synopsis, citations, retrieval score, and recommended team]
     Result --> Human{Human review}
-    Human -->|Approve| Approved[Approved]
+    Human -->|Supervisor approves| Approved[Approved]
     Human -->|Need more data| NeedsInfo[NeedsInfo]
     Human -->|Senior review| Escalated[Escalated]
 ```
@@ -184,11 +184,13 @@ finish, and a human controls the disposition.
 
 ### 6.4 Human review and audit
 
-The reviewer can approve, send back, or escalate. Each intake, triage, or review mutation uses one
-Firestore write batch containing both the case change and a new audit document. `auditCount` uses
-Firestore `increment(1)`. The case stores the generated `lastAuditId`; rules require that document
-to be newly created in the same atomic request. Audit rules also require `actorUid` and actor email
-to match `request.auth`, and prevent audit updates/deletes.
+Reviewers can send a case back or escalate it. Supervisors can perform those actions and approve a
+recommendation. Supervisor-only approval is enforced in the UI, client service, and Firestore
+rules. Each intake, triage, or review mutation uses one Firestore write batch containing both the
+case change and a new audit document. `auditCount` uses Firestore `increment(1)`. The case stores
+the generated `lastAuditId`; rules require that document to be newly created in the same atomic
+request. Audit rules also require `actorUid` and actor email to match `request.auth`, and prevent
+audit updates/deletes.
 
 This prevents a half-completed client write and blocks standalone or impersonated audit events.
 It does not make a browser client a trusted workflow engine; production should still move state
@@ -202,7 +204,7 @@ stateDiagram-v2
     Received --> NeedsInfo: Triage finds missing fields
     Received --> ReadyForReview: Triage is complete
     NeedsInfo --> ReadyForReview: Information completed and retriaged
-    ReadyForReview --> Approved: Human approves
+    ReadyForReview --> Approved: Supervisor approves
     ReadyForReview --> NeedsInfo: Human sends back
     ReadyForReview --> Escalated: Human escalates
 ```
@@ -249,6 +251,7 @@ remains the primary identifier.
 - Staff writes require an allowed role from the caller's own profile document.
 - Case creation requires `createdBy` to match the authenticated UID.
 - Every case mutation must atomically create a newly linked audit document.
+- Only a Supervisor can write an `Approved` case state or `Approved` audit event.
 - Audit actor UID and email must match Firebase Authentication claims.
 - Case deletion and audit mutation/deletion are denied.
 - Unknown Firestore paths are denied by default.
@@ -261,15 +264,18 @@ and project configuration—not on hiding that configuration from the browser.
 
 ### Demonstration-only limitations
 
-- Any authenticated staff demo user can read every case and mutate allowed workflow fields.
+- Any authenticated staff demo user can read every case and mutate allowed non-approval workflow
+  fields; only Supervisors can approve.
 - Roles are broad demo roles, not assignment-scoped or tenant-scoped authorization.
 - A malicious staff client can still choose an allowed event/detail and attempt allowed state
   fields, although it cannot impersonate the audit actor or separate the event from the case write.
 - Business invariants, allowed status transitions, field shapes, and maximum sizes are not
   validated server-side.
-- There is no tenant boundary, App Check, rate limiting, malware scanning, DLP, or retention
-  policy.
-- Requester registration does not require verified email and has no bot/abuse controls in this demo.
+- There is no tenant boundary, application-level rate limiting, malware scanning, DLP, or
+  retention policy. Authentication and Firestore enforce App Check for the deployed client, but
+  App Check is only one abuse signal.
+- Requester registration does not require verified email or application-level rate limiting;
+  App Check reduces automated abuse but does not eliminate it.
 - OCR text and complaint content are stored in Firestore without application-level encryption.
 - The UI fallback to sample data can mask a Firestore outage if the warning is overlooked.
 
@@ -302,7 +308,7 @@ Three layers provide confidence:
 3. **Live end-to-end verification** uses Chromium against Firebase Hosting, signs in as Requester,
    Reviewer, and Supervisor, proves the requester lacks staff controls, creates a fictional case,
    runs retrieval, approves it, reloads the page, and checks the case plus all three expected audit
-   events directly in Firestore.
+   events directly through App Check-attested Firestore REST requests.
 
 The live script intentionally creates a fictional verification case on each run. Credentials are
 read from `~/.config/complaint-triage/demo-accounts.json` and never from the repository.
@@ -323,8 +329,8 @@ Before real complaint or student data is introduced:
    controls.
 7. Version the real policy corpus, preserve retrieval provenance, measure retrieval quality, and
    require human confirmation for every disposition.
-8. Add App Check, abuse controls, structured observability, alerting, backups, and disaster-recovery
-   exercises.
+8. Monitor App Check metrics and maintain enforcement, then add layered abuse controls, structured
+   observability, alerting, backups, and disaster-recovery exercises.
 9. Require verified requester email, consent/retention acknowledgement, duplicate/spam detection,
    and accessible account recovery before opening public intake.
 10. Add CI for unit tests, build, dependency review, Firestore rules tests, and emulator-based
@@ -358,6 +364,8 @@ firebase.json                    Hosting and deployment configuration
 | Atomic linked audit subcollection | Prevents half-writes and binds actor identity                           | Client-selected state transitions still need a trusted production service        |
 | Static Firebase Hosting           | Low operational cost and simple deployment                              | No trusted application tier for business invariants                              |
 | Requester/staff separation        | Keeps public intake away from internal review data                      | Production still needs verified identity, abuse controls, and assignment scoping |
+| Supervisor-only approval          | Preserves the risk-based human approval boundary                        | Production still needs assignment-aware server-side authorization                |
+| Firebase App Check                | Adds reCAPTCHA Enterprise attestation to deployed client requests       | Does not replace Authentication, rules, rate limits, or monitoring               |
 | TEA-inspired visual system        | Uses Open Sans and the published palette for familiar Texas context     | Explicit non-affiliation notice and no TEA logo are required                     |
 
 These decisions are appropriate for a transparent fictional-data prototype. The production

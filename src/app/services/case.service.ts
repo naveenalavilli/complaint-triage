@@ -128,11 +128,14 @@ export class CaseService {
     actor: UserProfile,
     notes: string,
   ): Promise<void> {
+    if (action === 'approve' && actor.role !== 'Supervisor') {
+      throw new Error('Only a Supervisor can approve a recommendation.');
+    }
     const status =
       action === 'approve' ? 'Approved' : action === 'sendBack' ? 'NeedsInfo' : 'Escalated';
     const detail =
       action === 'approve'
-        ? 'Reviewer approved the triage recommendation and team assignment.'
+        ? 'Supervisor approved the triage recommendation and team assignment.'
         : action === 'sendBack'
           ? 'Reviewer requested additional information.'
           : 'Reviewer escalated the complaint for senior review.';
