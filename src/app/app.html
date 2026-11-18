@@ -1,0 +1,386 @@
+@if (auth.loading()) {
+  <main class="boot-screen" aria-live="polite">
+    <div class="brand-mark">CT</div>
+    <div class="spinner"></div>
+    <p>Opening Complaint Triage…</p>
+  </main>
+} @else if (!auth.profile()) {
+  <main class="login-shell">
+    <section class="login-story">
+      <div class="story-content">
+        <a class="brand brand-light" href="/" aria-label="Complaint Triage home">
+          <span class="brand-mark">CT</span>
+          <span>Complaint Triage</span>
+        </a>
+        <div class="story-copy">
+          <p class="eyebrow">HUMAN-CENTERED CASE REVIEW</p>
+          <h1>From intake to insight, without losing human judgment.</h1>
+          <p>
+            Structure every complaint, surface missing information, and review grounded AI
+            recommendations with clear source citations.
+          </p>
+          <div class="trust-row">
+            <span>✓ Human approval required</span>
+            <span>✓ Complete audit trail</span>
+            <span>✓ Fictional demo data</span>
+          </div>
+        </div>
+        <p class="story-credit">
+          Created by
+          <a href="https://github.com/naveenalavilli" target="_blank" rel="noreferrer">Naveen Alavilli</a>
+        </p>
+      </div>
+    </section>
+
+    <section class="login-panel">
+      <form class="login-card" (ngSubmit)="login()">
+        <p class="eyebrow dark">STAFF ACCESS</p>
+        <h2>Welcome back</h2>
+        <p class="muted">Sign in with a demo reviewer account to open the work queue.</p>
+
+        <label>
+          Email address
+          <input
+            type="email"
+            name="email"
+            [(ngModel)]="loginEmail"
+            autocomplete="email"
+            placeholder="reviewer@example.com"
+            required
+          />
+        </label>
+        <label>
+          Password
+          <input
+            type="password"
+            name="password"
+            [(ngModel)]="loginPassword"
+            autocomplete="current-password"
+            placeholder="Enter your password"
+            required
+          />
+        </label>
+        @if (auth.error()) {
+          <p class="form-error" role="alert">{{ auth.error() }}</p>
+        }
+        <button class="button button-primary button-wide" type="submit" [disabled]="busy() === 'login'">
+          {{ busy() === 'login' ? 'Signing in…' : 'Sign in to dashboard' }}
+        </button>
+        <p class="privacy-note">This demo contains fictional complaints and fictional policy text only.</p>
+      </form>
+    </section>
+  </main>
+} @else {
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="/" aria-label="Complaint Triage home">
+        <span class="brand-mark">CT</span>
+        <span>Complaint Triage</span>
+      </a>
+
+      <nav aria-label="Primary navigation">
+        <p class="nav-label">WORKSPACE</p>
+        <button [class.active]="view() === 'queue'" (click)="changeView('queue')">
+          <span class="nav-icon">⌂</span> Review queue
+          @if (metrics().review) { <b>{{ metrics().review }}</b> }
+        </button>
+        <button [class.active]="view() === 'new'" (click)="changeView('new')">
+          <span class="nav-icon">＋</span> New complaint
+        </button>
+        <button [class.active]="view() === 'audit'" (click)="changeView('audit')">
+          <span class="nav-icon">≋</span> Audit overview
+        </button>
+      </nav>
+
+      <div class="sidebar-note">
+        <span class="note-icon">✦</span>
+        <div>
+          <strong>AI drafts. Staff decide.</strong>
+          <p>Every recommendation requires human review.</p>
+        </div>
+      </div>
+
+      <div class="user-card">
+        <span class="avatar">{{ auth.profile()!.displayName.slice(0, 1).toUpperCase() }}</span>
+        <div>
+          <strong>{{ auth.profile()!.displayName }}</strong>
+          <small>{{ auth.profile()!.role }}</small>
+        </div>
+        <button class="icon-button" type="button" title="Sign out" (click)="logout()">↪</button>
+      </div>
+    </aside>
+
+    <main class="workspace">
+      <header class="topbar">
+        <div>
+          <p class="mobile-brand">Complaint Triage</p>
+          <h1>
+            {{ view() === 'queue' ? 'Review queue' : view() === 'new' ? 'New complaint' : 'Audit overview' }}
+          </h1>
+          <p>
+            {{
+              view() === 'queue'
+                ? 'Prioritize cases, inspect evidence, and make the final call.'
+                : view() === 'new'
+                  ? 'Capture a structured complaint and supporting evidence.'
+                  : 'Track case activity and decision accountability.'
+            }}
+          </p>
+        </div>
+        <div class="demo-badge"><span></span> Demo environment</div>
+      </header>
+
+      @if (notice()) {
+        <div class="notice" role="status">
+          <span>✓</span> {{ notice() }}
+          <button type="button" (click)="notice.set('')" aria-label="Dismiss">×</button>
+        </div>
+      }
+      @if (caseService.error()) {
+        <div class="notice warning" role="status"><span>!</span> {{ caseService.error() }}</div>
+      }
+
+      @if (view() === 'queue') {
+        <section class="metric-grid" aria-label="Case summary">
+          <article>
+            <div class="metric-icon violet">◫</div>
+            <div><span>Total cases</span><strong>{{ metrics().total }}</strong><small>Active demo records</small></div>
+          </article>
+          <article>
+            <div class="metric-icon blue">✓</div>
+            <div><span>Ready for review</span><strong>{{ metrics().review }}</strong><small>Awaiting staff decision</small></div>
+          </article>
+          <article>
+            <div class="metric-icon red">!</div>
+            <div><span>High risk</span><strong>{{ metrics().high }}</strong><small>Requires escalation</small></div>
+          </article>
+          <article>
+            <div class="metric-icon amber">?</div>
+            <div><span>Needs information</span><strong>{{ metrics().needsInfo }}</strong><small>Requester follow-up</small></div>
+          </article>
+        </section>
+
+        <section class="panel queue-panel">
+          <div class="panel-heading">
+            <div><h2>Cases</h2><p>Sorted by most recent activity</p></div>
+            <div class="queue-tools">
+              <label class="search-box">
+                <span>⌕</span>
+                <input
+                  type="search"
+                  aria-label="Search cases"
+                  placeholder="Search case, school, requester…"
+                  [value]="query()"
+                  (input)="setQuery($any($event.target).value)"
+                />
+              </label>
+              <select aria-label="Filter by status" [value]="statusFilter()" (change)="setStatus($any($event.target).value)">
+                <option>All</option>
+                <option>Received</option>
+                <option>NeedsInfo</option>
+                <option>ReadyForReview</option>
+                <option>Approved</option>
+                <option>Escalated</option>
+              </select>
+              <button class="button button-primary" type="button" (click)="changeView('new')">＋ Add complaint</button>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Case</th><th>Complaint</th><th>Risk</th><th>Status</th><th>AI confidence</th><th>Updated</th><th></th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (item of filteredCases(); track item.id) {
+                  <tr (click)="openCase(item)" tabindex="0" (keydown.enter)="openCase(item)">
+                    <td><strong>{{ item.caseNumber }}</strong><small>{{ item.district || 'District not provided' }}</small></td>
+                    <td><strong>{{ item.teacherName || 'Teacher not provided' }}</strong><small>{{ item.school || item.requesterName }}</small></td>
+                    <td><span class="pill risk" [ngClass]="riskClass(item.riskLevel)"><i></i>{{ item.riskLevel }}</span></td>
+                    <td><span class="pill status" [ngClass]="statusClass(item.status)">{{ item.status }}</span></td>
+                    <td>
+                      @if (item.confidence) {
+                        <div class="confidence"><span><i [style.width.%]="item.confidence * 100"></i></span>{{ item.confidence | percent:'1.0-0' }}</div>
+                      } @else { <span class="muted">Not scored</span> }
+                    </td>
+                    <td>{{ formatDate(item.updatedAt) }}</td>
+                    <td><button class="row-arrow" type="button" aria-label="Open case">›</button></td>
+                  </tr>
+                } @empty {
+                  <tr><td colspan="7" class="empty-state">No cases match these filters.</td></tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </section>
+      }
+
+      @if (view() === 'new') {
+        <section class="form-layout">
+          <form class="panel intake-card" (ngSubmit)="submitCase()">
+            <div class="section-title"><span>1</span><div><h2>Requester details</h2><p>How staff can follow up about this complaint.</p></div></div>
+            <div class="form-grid">
+              <label>Full name *<input name="requesterName" [(ngModel)]="intake.requesterName" required /></label>
+              <label>Email address *<input type="email" name="requesterEmail" [(ngModel)]="intake.requesterEmail" required /></label>
+              <label>Phone number<input type="tel" name="requesterPhone" [(ngModel)]="intake.requesterPhone" /></label>
+            </div>
+
+            <hr />
+            <div class="section-title"><span>2</span><div><h2>Subject and incident</h2><p>Known details about the educator and event.</p></div></div>
+            <div class="form-grid">
+              <label>Teacher name<input name="teacherName" [(ngModel)]="intake.teacherName" /></label>
+              <label>School<input name="school" [(ngModel)]="intake.school" /></label>
+              <label>District<input name="district" [(ngModel)]="intake.district" /></label>
+              <label>Incident date<input type="date" name="incidentDate" [(ngModel)]="intake.incidentDate" /></label>
+            </div>
+
+            <hr />
+            <div class="section-title"><span>3</span><div><h2>Complaint and evidence</h2><p>Describe what happened and attach supporting material.</p></div></div>
+            <label>
+              Description *
+              <textarea name="description" [(ngModel)]="intake.description" rows="7" placeholder="Include what happened, when, who was involved, and any steps already taken." required></textarea>
+            </label>
+            <label class="drop-zone">
+              <input type="file" multiple accept="image/*,.pdf,.txt" (change)="filesSelected($event)" />
+              <span class="upload-icon">⇧</span>
+              <strong>Choose attachments</strong>
+              <small>Images are read locally with OCR. PDF, image, or text; demo only.</small>
+            </label>
+            @if (attachmentNames().length) {
+              <div class="file-list">
+                @for (name of attachmentNames(); track name) { <span>▱ {{ name }}</span> }
+              </div>
+            }
+            @if (ocrProgress()) { <p class="ocr-progress">{{ ocrProgress() }}</p> }
+
+            <div class="form-actions">
+              <button class="button button-secondary" type="button" (click)="changeView('queue')">Cancel</button>
+              <button class="button button-primary" type="submit" [disabled]="busy() === 'submit' || busy() === 'ocr'">
+                {{ busy() === 'submit' ? 'Submitting…' : 'Submit complaint' }}
+              </button>
+            </div>
+          </form>
+
+          <aside class="guidance-card">
+            <div class="guidance-icon">◎</div>
+            <h3>What happens next?</h3>
+            <ol>
+              <li><span>1</span><div><strong>Validate</strong><p>Missing information is identified.</p></div></li>
+              <li><span>2</span><div><strong>Draft</strong><p>AI retrieves and cites relevant demo policy.</p></div></li>
+              <li><span>3</span><div><strong>Review</strong><p>A staff member decides, edits, or escalates.</p></div></li>
+            </ol>
+            <p class="guidance-note">No AI output becomes a final decision without human approval.</p>
+          </aside>
+        </section>
+      }
+
+      @if (view() === 'audit') {
+        <section class="audit-layout">
+          <article class="panel audit-summary">
+            <div class="panel-heading"><div><h2>Decision accountability</h2><p>Snapshot of fictional demo activity.</p></div><span class="demo-tag">DEMO DATA</span></div>
+            <div class="audit-stats">
+              <div><strong>{{ metrics().total }}</strong><span>Case records</span></div>
+              <div><strong>{{ metrics().review + metrics().high }}</strong><span>Human checkpoints</span></div>
+              <div><strong>100%</strong><span>Cited AI drafts</span></div>
+              <div><strong>0</strong><span>Autonomous decisions</span></div>
+            </div>
+          </article>
+          <article class="panel activity-panel">
+            <div class="panel-heading"><div><h2>Recent activity</h2><p>Every material state change is traceable.</p></div></div>
+            <div class="timeline">
+              @for (item of recentCases(); track item.id) {
+                <div class="timeline-item">
+                  <span class="timeline-dot"></span>
+                  <div><strong>{{ item.caseNumber }} · {{ item.status }}</strong><p>{{ item.aiSummary || 'Complaint received and awaiting processing.' }}</p><small>{{ formatDate(item.updatedAt) }} · {{ item.auditCount }} audit events</small></div>
+                </div>
+              }
+            </div>
+          </article>
+        </section>
+      }
+
+      <footer>
+        <span>Complaint Triage · Fictional demonstration</span>
+        <span>Created by <a href="https://github.com/naveenalavilli" target="_blank" rel="noreferrer">Naveen Alavilli</a></span>
+      </footer>
+    </main>
+
+    @if (selectedCase(); as item) {
+      <div class="drawer-backdrop" (click)="closeCase()"></div>
+      <aside class="case-drawer" aria-label="Case details">
+        <header>
+          <div><p>{{ item.caseNumber }}</p><h2>Complaint review</h2></div>
+          <button class="icon-button" type="button" (click)="closeCase()" aria-label="Close case">×</button>
+        </header>
+
+        <div class="drawer-body">
+          <div class="case-badges">
+            <span class="pill risk" [ngClass]="riskClass(item.riskLevel)"><i></i>{{ item.riskLevel }} risk</span>
+            <span class="pill status" [ngClass]="statusClass(item.status)">{{ item.status }}</span>
+          </div>
+
+          <section class="case-section">
+            <h3>Submission</h3>
+            <dl>
+              <div><dt>Requester</dt><dd>{{ item.requesterName }}</dd></div>
+              <div><dt>Teacher</dt><dd>{{ item.teacherName || 'Not provided' }}</dd></div>
+              <div><dt>School</dt><dd>{{ item.school || 'Not provided' }}</dd></div>
+              <div><dt>Incident</dt><dd>{{ item.incidentDate || 'Not provided' }}</dd></div>
+            </dl>
+            <p class="submission-text">{{ item.description }}</p>
+            @if (item.attachmentNames.length) {
+              <div class="file-list">@for (name of item.attachmentNames; track name) { <span>▱ {{ name }}</span> }</div>
+            }
+          </section>
+
+          <section class="case-section ai-section">
+            <div class="section-heading"><div><span class="spark">✦</span><h3>AI-assisted draft</h3></div><span class="human-chip">Human review required</span></div>
+            @if (!item.aiSummary) {
+              <div class="triage-empty">
+                <p>Retrieve relevant demo policy, assess completeness and draft a recommendation.</p>
+                <button class="button button-primary" type="button" (click)="runTriage(item)" [disabled]="busy() === 'triage'">
+                  {{ busy() === 'triage' ? ai.progress() : '✦ Run assisted triage' }}
+                </button>
+              </div>
+            } @else {
+              <p class="ai-summary">{{ item.aiSummary }}</p>
+              <div class="ai-meta">
+                <div><span>Confidence</span><strong>{{ item.confidence | percent:'1.0-0' }}</strong></div>
+                <div><span>Recommended team</span><strong>{{ item.recommendedTeam }}</strong></div>
+              </div>
+              @if (item.allegationCategories.length) {
+                <div class="category-list">@for (category of item.allegationCategories; track category) { <span>{{ category }}</span> }</div>
+              }
+              <h4>Grounded citations</h4>
+              @for (code of item.suggestedCodes; track code.sourceChunkId) {
+                <article class="citation-card">
+                  <div><strong>{{ code.section }}</strong><span>{{ code.title }}</span></div>
+                  <p>“{{ code.sourceText }}”</p>
+                  <small>{{ code.reason }}</small>
+                </article>
+              }
+              @if (item.missingFields.length) {
+                <div class="missing-box"><strong>Missing information</strong><p>{{ item.missingFields.join(', ') }}</p></div>
+              }
+            }
+          </section>
+
+          <section class="case-section">
+            <label>
+              Reviewer notes
+              <textarea rows="4" placeholder="Record rationale, edits, or follow-up needed…" [value]="reviewerNotes()" (input)="setNotes($any($event.target).value)"></textarea>
+            </label>
+          </section>
+        </div>
+
+        <footer class="drawer-actions">
+          <button class="button button-danger-ghost" type="button" (click)="review('escalate')" [disabled]="!!busy()">Escalate</button>
+          <button class="button button-secondary" type="button" (click)="review('sendBack')" [disabled]="!!busy()">Send back</button>
+          <button class="button button-success" type="button" (click)="review('approve')" [disabled]="!!busy() || !item.aiSummary">✓ Approve</button>
+        </footer>
+      </aside>
+    }
+  </div>
+}
